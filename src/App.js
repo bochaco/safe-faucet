@@ -12,6 +12,8 @@ export const appInfo = {
   permissions: ["LOW_LEVEL_API"]
 };
 
+const NUMBER_OF_COINS_TO_MINT = 5;
+
 class App extends React.Component {
   constructor(props) {
     super(props);
@@ -22,6 +24,7 @@ class App extends React.Component {
       rating: -1,
     }
 
+    this.mintCoins = this.mintCoins.bind(this);
     this.handleRating = this.handleRating.bind(this);
     this.handleSubmit = this.handleSubmit.bind(this);
   }
@@ -34,21 +37,37 @@ class App extends React.Component {
     this.setState({rating: rating})
   }
 
+  mintCoins(pk, amount) {
+    if (amount < 1) {
+      return Promise.resolve([]);
+    }
+
+    let _id, _ids;
+    return mintCoin(pk)
+      .then(id => _id = id)
+      .then(() => this.mintCoins(pk, amount-1))
+      .then(ids => _ids = ids)
+      .then(() => _ids.push(_id))
+      .then(() => {
+        return _ids;
+      })
+  }
+
   handleSubmit(e, { formData }) {
     e.preventDefault();
     this.setState({claimed: true});
     let pk = formData.pk;
-    console.log("Minting a coin...", pk);
-    let coinId, inbox;
-    mintCoin(pk)
-      .then(id => coinId = id)
+    let coinIds, inbox;
+    console.log("Minting coins for", pk);
+    this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT)
+      .then(ids => coinIds = ids)
       .then(() => readTxInboxData(pk))
       .then(data => inbox = data)
-      .then(() => console.log("Inbox: ", coinId, inbox))
-      .then(() => inbox.push({coinId: coinId, msg: 'In exchange of your feedback about SAFE Wallet!', date: (new Date()).toUTCString()}))
+      .then(() => console.log("Inbox: ", coinIds, inbox))
+      .then(() => inbox.push({coinIds: coinIds, msg: 'In exchange of your feedback about SAFE Wallet!', date: (new Date()).toUTCString()}))
       .then(() => console.log("Notifying to recipient's inbox", inbox))
       .then(() => saveTxInboxData(pk, inbox))
-      .then(() => console.log("Coin has been transferred"))
+      .then(() => console.log("Coins have been transferred"))
       .then(() => sendEmail(this.state.rating, formData.comments, pk))
       .then(() => console.log("Feedback has been sent to safewalletfeedback"))
       .then(() => this.setState({transferred: true}))
@@ -92,7 +111,7 @@ class App extends React.Component {
               }
             </Form>
             {(this.state.claimed && this.state.transferred) &&
-              <Message header='Your ThanksCoins have been transfered to your wallet!' attached='bottom' info icon='wizard'
+              <Message header={NUMBER_OF_COINS_TO_MINT + ' ThanksCoins have been transfered to your wallet!'} attached='bottom' info icon='wizard'
                 content='Thanks for your feedback. You can check your balance on the SAFE Wallet.' />
             }
           </Grid.Column>

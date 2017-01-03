@@ -4,16 +4,16 @@
 import crypto from 'crypto';
 import * as base64 from 'urlsafe-base64';
 
+let AUTH_TOKEN = null;
 const EMAIL_ID = "safewalletfeedback";
+const WALLET_INBOX_PREFIX = "WALLETINBOX-";
+const OWNER_OF_MINTED_COINS = '1Eup55KofQRtBk1xS48LZs4RPYW2x8bgg5';
 
 export const getXorName = (id) => { return base64.encode(crypto.createHash('sha256').update(id).digest('base64')); }
 
 if (process.env.NODE_ENV !== 'production') {
   require('safe-js/dist/polyfill')
 }
-
-let AUTH_TOKEN = null;
-const WALLET_INBOX_PREFIX = "WALLETINBOX-";
 
 const _getHandleId = (res) => {
   return res.hasOwnProperty('handleId') ? res.handleId : res.__parsedResponseBody__.handleId;
@@ -46,12 +46,10 @@ const _getSDataHandle = (id) => {
   return window.safeDataId.getStructuredDataHandle(AUTH_TOKEN, id, 500)
     .then(_getHandleId)
     .then(handleId => (dataIdHandle = handleId))
-    .then(() => (console.log("Fetched dataIdHandle:", dataIdHandle)) )
     .then(() => window.safeStructuredData.getHandle(AUTH_TOKEN, dataIdHandle))
     .then(_getHandleId)
     .then(handleId => {
       window.safeDataId.dropHandle(AUTH_TOKEN, dataIdHandle);
-      console.log("Fetched SD handle:", handleId);
       return handleId;
     })
 }
@@ -64,7 +62,7 @@ export const mintCoin = (pk) => {
   let data = {
     type_tag: 15001,
     owner: pk,
-    prev_owner: '1Eup55KofQRtBk1xS48LZs4RPYW2x8bgg5',
+    prev_owner: OWNER_OF_MINTED_COINS,
   }
 
   let dataId = _generateStructredDataId();
@@ -75,7 +73,7 @@ export const mintCoin = (pk) => {
       console.log("SD just created:", handleId);
       return dataId;
     }, (err) => {
-      console.log("The coin already exists, trying to update it...I know...we are stealing a coin from someone :)");
+      console.error("The coin already exists, trying to update it...I know...we are stealing a coin from someone :)");
       const payload = new Buffer(JSON.stringify(data)).toString('base64');
       return _getSDataHandle(dataId)
         .then((handleId) => {
@@ -86,11 +84,11 @@ export const mintCoin = (pk) => {
               console.log("Coin updated in the network successfully");
               return dataId;
             }, (err) => {
-              console.log("Error when updating coin:", err);
+              console.error("Error when updating coin:", err);
             })
 
         }, (err) => {
-          console.log("Failed loading coin data:", err);
+          console.error("Failed loading coin data:", err);
         })
 
     })
@@ -107,11 +105,11 @@ const _loadData = (dataId) => {
           console.log("Data successfully retrieved");
           return parsedData;
         }, (err) => {
-          console.log("Error reading data:", err);
+          console.error("Error reading data:", err);
         })
 
     }, (err) => {
-      console.log("Failed loading data:", err);
+      console.error("Failed loading data:", err);
     })
 }
 
@@ -119,7 +117,7 @@ export const saveTxInboxData = (pk, data) => {
   const payload = new Buffer(JSON.stringify(data)).toString('base64');
   let dataId = getXorName(WALLET_INBOX_PREFIX + pk);
 
-  console.log("Saving data in the network...");
+  console.log("Saving TX inbox data in the network...");
 
   return _getSDataHandle(dataId)
     .then((handleId) => {
@@ -130,11 +128,11 @@ export const saveTxInboxData = (pk, data) => {
           console.log("Data saved in the network successfully");
           return data;
         }, (err) => {
-          console.log("Error when updating data:", err);
+          console.error("Error when updating data:", err);
         })
 
     }, (err) => {
-      console.log("Failed loading data:", err);
+      console.error("Failed loading data:", err);
     })
 }
 
@@ -150,7 +148,6 @@ const _getADataHandle = (id) => {
   return window.safeDataId.getAppendableDataHandle(AUTH_TOKEN, id, true)
     .then(_getHandleId)
     .then(handleId => (dataIdHandle = handleId))
-    .then(() => (console.log("Fetched dataIdHandle:", dataIdHandle)) )
     .then(() => window.safeAppendableData.getHandle(AUTH_TOKEN, dataIdHandle))
     .then(_getHandleId)
     .then(handleId => {
@@ -176,25 +173,20 @@ export const sendEmail = (rating, comments, pk) => {
     .then(() => window.safeAppendableData.getEncryptKey(AUTH_TOKEN, _handleId))
     .then(_getHandleId)
     .then((encryptKey) => _encryptKey = encryptKey)
-    .then(() => console.log("Got encryption key"))
     .then(() => (window.safeCipherOpts.getHandle(
         AUTH_TOKEN, window.safeCipherOpts.getEncryptionTypes().ASYMMETRIC, _encryptKey) ))
     .then(_getHandleId)
     .then(handleId => _cypherOptsAssymmetric = handleId )
-    .then(() => console.log("Got asymmetric encryption options handle"))
     .then(() => window.safeAppendableData.dropEncryptKeyHandle(AUTH_TOKEN, _encryptKey))
     .then(() => window.safeImmutableData.getWriterHandle(AUTH_TOKEN))
     .then(_getHandleId)
     .then(handleId => _immHandleId = handleId)
-    .then(() => console.log("Got immutable data handle"))
     .then(() => window.safeImmutableData.write(AUTH_TOKEN, _immHandleId, emailContent))
     .then(() => window.safeImmutableData.closeWriter(AUTH_TOKEN, _immHandleId, _cypherOptsAssymmetric))
     .then(_getHandleId)
     .then(handleId => _immToAppendHandleId = handleId)
     .then(() => window.safeImmutableData.dropWriter(AUTH_TOKEN, _immHandleId))
-    .then(() => console.log("Wrote email in immutableData"))
     .then(() => window.safeAppendableData.append(AUTH_TOKEN, _handleId, _immToAppendHandleId))
-    .then(() => console.log("Added email to appendableData"))
     .then(() => window.safeAppendableData.dropHandle(AUTH_TOKEN, _handleId))
     .then(() => console.log("Email sent"))
 }

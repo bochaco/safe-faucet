@@ -2,12 +2,12 @@ import React from 'react';
 import { Dimmer, Loader, Grid, Header, Rating, Button, Message, Form, Icon, Segment } from 'semantic-ui-react';
 import '../node_modules/semantic-ui-css/semantic.min.css';
 
-var {authoriseApp, readTxInboxData, saveTxInboxData, mintCoin, sendEmail} = require('./storage.js');
+var {authoriseApp, sendTxNotif, mintCoin, sendEmail} = require('./storage.js');
 
 export const appInfo = {
   name: 'SAFE Faucet',
   id: 'safe-faucet.bochaco',
-  version: '0.0.1',
+  version: '0.0.2',
   vendor: 'bochaco',
   permissions: ["LOW_LEVEL_API"]
 };
@@ -55,20 +55,19 @@ class App extends React.Component {
 
   handleSubmit(e, { formData }) {
     e.preventDefault();
-    this.setState({claimed: true});
     let pk = formData.pk;
-    let coinIds, inbox;
+    if (pk.length < 1) {
+      return;
+    }
+    this.setState({claimed: true});
+    let coinIds;
     console.log("Minting coins for", pk);
     this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT)
       .then(ids => coinIds = ids)
-      .then(() => readTxInboxData(pk))
-      .then(data => inbox = data)
-      .then(() => console.log("Inbox: ", coinIds, inbox))
-      .then(() => inbox.push({coinIds: coinIds, msg: 'In exchange of your feedback about SAFE Wallet!', date: (new Date()).toUTCString()}))
-      .then(() => console.log("Notifying to recipient's inbox", inbox))
-      .then(() => saveTxInboxData(pk, inbox))
+      .then(() => console.log("Notifying to recipient's inbox", coinIds))
+      .then(() => sendTxNotif(pk, coinIds))
       .then(() => console.log("Coins have been transferred"))
-      .then(() => sendEmail(this.state.rating, formData.comments, pk))
+      .then(() => sendEmail(this.state.rating, formData.comments))
       .then(() => console.log("Feedback has been sent to safewalletfeedback"))
       .then(() => this.setState({transferred: true}))
   }

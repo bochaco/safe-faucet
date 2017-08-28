@@ -1,6 +1,7 @@
 {
   "name": "safe-faucet",
-  "version": "0.0.2",
+  "homepage": "file:///home/bochaco/work/safe-faucet/build/",
+  "version": "0.0.10",
   "private": true,
   "devDependencies": {
     "react-scripts": "0.8.4"

@@ -7,12 +7,12 @@ var {authoriseApp, sendTxNotif, mintCoin, sendEmail} = require('./storage.js');
 export const appInfo = {
   name: 'SAFE Faucet',
   id: 'safe-faucet.bochaco',
-  version: '0.0.2',
-  vendor: 'bochaco',
-  permissions: ["LOW_LEVEL_API"]
+  vendor: 'bochaco'
 };
 
-const NUMBER_OF_COINS_TO_MINT = 5;
+const NUMBER_OF_COINS_TO_MINT = 2;
+const EMAIL_ID = "safewalletfeedback";
+const SAFE_WALLET_URL = 'safe://safewallet.wow';
 
 class App extends React.Component {
   constructor(props) {
@@ -29,10 +29,6 @@ class App extends React.Component {
     this.handleSubmit = this.handleSubmit.bind(this);
   }
 
-  componentWillMount() {
-    authoriseApp(appInfo);
-  }
-
   handleRating (e, { rating, maxRating }) {
     this.setState({rating: rating})
   }
@@ -41,16 +37,17 @@ class App extends React.Component {
     if (amount < 1) {
       return Promise.resolve([]);
     }
-
-    let _id, _ids;
+    let id;
     return mintCoin(pk)
-      .then(id => _id = id)
-      .then(() => this.mintCoins(pk, amount-1))
-      .then(ids => _ids = ids)
-      .then(() => _ids.push(_id))
-      .then(() => {
-        return _ids;
+      .then((_id) => {
+        id = _id;
+        console.log("Coin minted at: ", id);
+        return this.mintCoins(pk, amount-1);
       })
+      .then((ids) => {
+        ids.push(id);
+        return ids;
+      });
   }
 
   handleSubmit(e, { formData }) {
@@ -60,16 +57,23 @@ class App extends React.Component {
       return;
     }
     this.setState({claimed: true});
-    let coinIds;
-    console.log("Minting coins for", pk);
-    this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT)
-      .then(ids => coinIds = ids)
-      .then(() => console.log("Notifying to recipient's inbox", coinIds))
-      .then(() => sendTxNotif(pk, coinIds))
-      .then(() => console.log("Coins have been transferred"))
-      .then(() => sendEmail(this.state.rating, formData.comments))
-      .then(() => console.log("Feedback has been sent to safewalletfeedback"))
-      .then(() => this.setState({transferred: true}))
+    return authoriseApp(appInfo)
+      .then(() => {
+        console.log(`Minting coins for '${pk}'`);
+        return this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT);
+      })
+      .then((coinIds) => {
+        console.log("Notifying coins transfer to recipient's wallet inbox: ", coinIds);
+        return sendTxNotif(pk, coinIds);
+      })
+      .then(() => {
+        console.log("Coins transfer was notified");
+        return sendEmail(this.state.rating, formData.comments, EMAIL_ID);
+      })
+      .then(() => {
+        console.log(`Feedback has been sent to: '${EMAIL_ID}'`);
+        this.setState({transferred: true});
+      });
   }
 
   render() {
@@ -80,7 +84,7 @@ class App extends React.Component {
           <Grid.Column width={8}>
             <Segment attached='top' secondary>
               <Header>Welcome to the SAFE Faucet!</Header>
-              Get free <b>ThanksCoins</b> by providing feedback about the <a href='safe://safewallet.wow'>SAFE Wallet</a> app.
+              Get free <b>ThanksCoins</b> by providing feedback about the <a href={SAFE_WALLET_URL}>SAFE Wallet</a> app.
               Note this is anonymous, so please provide any type of feedback that it'll be very much appreciated.
             </Segment>
             <Form onSubmit={this.handleSubmit} name='mintACoin' className='attached fluid segment'>
@@ -110,8 +114,8 @@ class App extends React.Component {
               }
             </Form>
             {(this.state.claimed && this.state.transferred) &&
-              <Message header={NUMBER_OF_COINS_TO_MINT + ' ThanksCoins have been transfered to your wallet!'} attached='bottom' info icon='wizard'
-                content='Thanks for your feedback. You can check your balance on the SAFE Wallet.' />
+              <Message header={NUMBER_OF_COINS_TO_MINT + ' ThanksCoins have been transferred to your wallet!'} attached='bottom' info icon='wizard'
+                content='Thanks for your feedback. You can check your balance on the SAFE Wallet now.' />
             }
           </Grid.Column>
           <Grid.Column width={4} />

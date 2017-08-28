@@ -2,177 +2,145 @@
   Helper functions to store data in the SAFEnet
 */
 import crypto from 'crypto';
-import * as base64 from 'urlsafe-base64';
 
-let AUTH_TOKEN = null;
-const EMAIL_ID = "safewalletfeedback";
-const WALLET_INBOX_PREFIX = "WALLETINBOX-AD-";
-const OWNER_OF_MINTED_COINS = '1Eup55KofQRtBk1xS48LZs4RPYW2x8bgg5';
+let APP_HANDLE = null;
+const OWNER_OF_MINTED_COINS = 'GENESIS';
+const SERVICE_NAME_POSTFIX = "@email";
 
-export const getXorName = (id) => { return base64.encode(crypto.createHash('sha256').update(id).digest('base64')); }
+const TAG_TYPE_DNS = 15001;
+const TAG_TYPE_THANKS_COIN = 21082018;
+const TAG_TYPE_WALLET_TX_INBOX = 20082018;
 
-if (process.env.NODE_ENV !== 'production') {
-  require('safe-js/dist/polyfill')
-}
+const COIN_ENTRY_KEY_DATA = 'coin-data';
+const MD_KEY_EMAIL_ENC_PUBLIC_KEY = "__email_enc_pk";
 
-const _getHandleId = (res) => {
-  return res.hasOwnProperty('handleId') ? res.handleId : res.__parsedResponseBody__.handleId;
-}
+const _genXorName = (str) => window.safeCrypto.sha3Hash(APP_HANDLE, str);
 
-export const authoriseApp = (app) => {
+const _genRandomEntryKey = () => crypto.randomBytes(32).toString('hex');
+
+export const authoriseApp = (appInfo) => {
   console.log("Authenticating app...");
-  return window.safeAuth.authorise(app)
-    .then((res) => (AUTH_TOKEN = res.token) )
-    .then(() => (console.log("Auth Token retrieved") ))
-}
 
-const _createSData = (id, data, encryptHandle) => {
-  let dataHandle = null;
-  const payload = new Buffer(JSON.stringify(data)).toString('base64');
-
-  return window.safeStructuredData.create(AUTH_TOKEN, id, 500, payload, encryptHandle)
-    .then(_getHandleId)
-    .then(handleId => (dataHandle = handleId))
-    .then(() => window.safeStructuredData.put(AUTH_TOKEN, dataHandle))
-    .then(() => {
-      console.log("New SD saved in the net", dataHandle);
-      return dataHandle;
+  return window.safeApp.initialise(appInfo)
+    .then((appHandle) => {
+      APP_HANDLE = appHandle;
+      console.log("App handle retrieved: ", appHandle);
+      return window.safeApp.authorise(APP_HANDLE, {});
     })
-}
-
-const _getSDataHandle = (id) => {
-  console.log("Fetching SD handle...");
-  let dataIdHandle = null;
-  return window.safeDataId.getStructuredDataHandle(AUTH_TOKEN, id, 500)
-    .then(_getHandleId)
-    .then(handleId => (dataIdHandle = handleId))
-    .then(() => window.safeStructuredData.getHandle(AUTH_TOKEN, dataIdHandle))
-    .then(_getHandleId)
-    .then(handleId => {
-      window.safeDataId.dropHandle(AUTH_TOKEN, dataIdHandle);
-      return handleId;
-    })
-}
-
-const _generateStructredDataId = () => {
-  return base64.encode(crypto.randomBytes(32).toString('base64'));
-};
-
-const _loadData = (dataId) => {
-  return _getSDataHandle(dataId)
-    .then((handleId) => {
-      // let's try to read the data now!
-      console.log("Reading the data...");
-      return window.safeStructuredData.readData(AUTH_TOKEN, handleId, '')
-        .then((res) => res.json ? res.json() : JSON.parse(new Buffer(res).toString()))
-        .then((parsedData) => {
-          console.log("Data successfully retrieved");
-          return parsedData;
-        }, (err) => {
-          console.error("Error reading data:", err);
-        })
-
-    }, (err) => {
-      console.error("Failed loading data:", err);
-    })
-}
-
-const _getADataHandle = (id) => {
-  let dataIdHandle = null;
-  return window.safeDataId.getAppendableDataHandle(AUTH_TOKEN, id, true)
-    .then(_getHandleId)
-    .then(handleId => (dataIdHandle = handleId))
-    .then(() => window.safeAppendableData.getHandle(AUTH_TOKEN, dataIdHandle))
-    .then(_getHandleId)
-    .then(handleId => {
-      window.safeDataId.dropHandle(AUTH_TOKEN, dataIdHandle);
-      return handleId;
-    })
-}
-
-const _getEncryptionHandle = (handleId) => {
-  let _cypherOptsAssymmetric, _encryptKey;
-  return window.safeAppendableData.getEncryptKey(AUTH_TOKEN, handleId)
-    .then(_getHandleId)
-    .then((encryptKey) => _encryptKey = encryptKey)
-    .then(() => (window.safeCipherOpts.getHandle(
-        AUTH_TOKEN, window.safeCipherOpts.getEncryptionTypes().ASYMMETRIC, _encryptKey) ))
-    .then(_getHandleId)
-    .then(handleId => _cypherOptsAssymmetric = handleId )
-    .then(() => window.safeAppendableData.dropEncryptKeyHandle(AUTH_TOKEN, _encryptKey))
-    .then(() => {
-      return _cypherOptsAssymmetric;
-    })
+    .then((authUri) => window.safeApp.connectAuthorised(APP_HANDLE, authUri))
+    .then(() => console.log('The app was authorised'))
+    .catch((err) => console.error('Error when trying to authorise the app: ', err));
 }
 
 export const mintCoin = (pk) => {
-  let data = {
-    type_tag: 15001,
-    owner: pk,
-    prev_owner: OWNER_OF_MINTED_COINS,
-  }
+  const coin = { owner: pk, prev_owner: OWNER_OF_MINTED_COINS };
+  const coinData = { [COIN_ENTRY_KEY_DATA]: JSON.stringify(coin) };
 
-  let dataId = _generateStructredDataId();
-  console.log("Minting coin: ", dataId, data);
-
-  let recipientInboxId = getXorName(WALLET_INBOX_PREFIX + pk);
-  let _handleId, _cypherOptsAssymmetric;
-  return _getADataHandle(recipientInboxId)
-    .then((handleId) => _handleId = handleId)
-    .then(() => _getEncryptionHandle(_handleId))
-    .then(encryptHandle => _cypherOptsAssymmetric = encryptHandle)
-    .then(() => _createSData(dataId, data, _cypherOptsAssymmetric))
-    .then((handleId) => {
-      console.log("SD just created:", handleId);
-      window.safeAppendableData.dropHandle(AUTH_TOKEN, _handleId);
-      return dataId;
-    }, (err) => {
-      throw Error("The coin already exists...that's bad luck!");
-    })
-}
-
-const _appendToTxInbox = (id, content) => {
-  let _handleId, _encryptKey, _cypherOptsAssymmetric, _immHandleId, _immToAppendHandleId;
-  return _getADataHandle(id)
-    .then((handleId) => _handleId = handleId)
-    .then(() => _getEncryptionHandle(_handleId))
-    .then(encryptHandle => _cypherOptsAssymmetric = encryptHandle)
-    .then(() => window.safeImmutableData.getWriterHandle(AUTH_TOKEN))
-    .then(_getHandleId)
-    .then(handleId => _immHandleId = handleId)
-    .then(() => window.safeImmutableData.write(AUTH_TOKEN, _immHandleId, content))
-    .then(() => window.safeImmutableData.closeWriter(AUTH_TOKEN, _immHandleId, _cypherOptsAssymmetric))
-    .then(_getHandleId)
-    .then(handleId => _immToAppendHandleId = handleId)
-    .then(() => window.safeImmutableData.dropWriter(AUTH_TOKEN, _immHandleId))
-    .then(() => window.safeAppendableData.append(AUTH_TOKEN, _handleId, _immToAppendHandleId))
-    .then(() => window.safeAppendableData.dropHandle(AUTH_TOKEN, _handleId))
+  let permSetHandle;
+  let coinXorName;
+  return window.safeMutableData.newRandomPublic(APP_HANDLE, TAG_TYPE_THANKS_COIN)
+    .then((coinHandle) => window.safeMutableData.quickSetup(coinHandle, coinData)
+      .then(() => window.safeMutableData.newPermissionSet(APP_HANDLE))
+      .then((pmSetHandle) => permSetHandle = pmSetHandle)
+      .then(() => window.safeMutableDataPermissionsSet.setAllow(permSetHandle, 'Update'))
+      .then(() => window.safeMutableData.setUserPermissions(coinHandle, null, permSetHandle, 1))
+      .then(() => window.safeMutableDataPermissionsSet.free(permSetHandle))
+      .then(() => window.safeMutableData.getNameAndTag(coinHandle))
+      .then((res) => coinXorName = res.name.buffer.toString('hex'))
+      .then(() => window.safeMutableData.free(coinHandle))
+    )
+    .then(() => coinXorName);
 }
 
 export const sendTxNotif = (pk, coinIds) => {
-  let txInboxId = getXorName(WALLET_INBOX_PREFIX + pk);
-  let data = {
+  let txId = _genRandomEntryKey();
+  let tx = {
     coinIds: coinIds,
-    msg: 'In exchange of your feedback about SAFE Wallet!',
+    msg: 'In exchange for your feedback about the SAFE Wallet!',
     date: (new Date()).toUTCString()
   }
-  const txNotif = new Uint8Array(new Buffer(JSON.stringify(data)));
 
   console.log("Saving TX inbox data in the network...");
-  return _appendToTxInbox(txInboxId, txNotif)
-    .then(() => console.log("TX notification sent"))
+  return window.safeMutableData.newMutation(APP_HANDLE)
+    .then((mutHandle) => window.safeMutableDataMutation.insert(mutHandle, txId, JSON.stringify(tx)) // TODO: encrypt notif
+      .then(() => _genXorName(pk))
+      .then((xorName) => window.safeMutableData.newPublic(APP_HANDLE, xorName, TAG_TYPE_WALLET_TX_INBOX))
+      .then((txInboxHandle) => window.safeMutableData.applyEntriesMutation(txInboxHandle, mutHandle)
+        .then(() => window.safeMutableData.free(txInboxHandle))
+      )
+      .then(() => window.safeMutableDataMutation.free(mutHandle))
+    );
 }
 
-export const sendEmail = (rating, comments) => {
-  let emailId = EMAIL_ID;
-  let data = {
+const _encrypt = (input, pk) => {
+  if(Array.isArray(input)) {
+    input = input.toString();
+  }
+
+  return window.safeCrypto.pubEncKeyKeyFromRaw(APP_HANDLE, Buffer.from(pk, 'hex'))
+    .then((pubEncKeyHandle) => window.safeCryptoPubEncKey.encryptSealed(pubEncKeyHandle, input))
+};
+
+const _writeEmailContent = (email, pk) => {
+  return _encrypt(JSON.stringify(email), pk)
+    .then(encryptedEmail => window.safeImmutableData.create(APP_HANDLE)
+       .then((emailHandle) => window.safeImmutableData.write(emailHandle, encryptedEmail)
+         .then(() => window.safeCipherOpt.newPlainText(APP_HANDLE))
+         .then((cipherOptHandle) => window.safeImmutableData.closeWriter(emailHandle, cipherOptHandle))
+       )
+    )
+}
+
+const _splitPublicIdAndService = (emailId) => {
+  // It supports complex email IDs, e.g. 'emailA.myshop', 'emailB.myshop'
+  let str = emailId.replace(/\.+$/, '');
+  let toParts = str.split('.');
+  const publicId = toParts.pop();
+  const serviceId =  str.slice(0, -1 * (publicId.length+1));
+  emailId = (serviceId.length > 0 ? (serviceId + '.') : '') + publicId;
+  const serviceName = serviceId + SERVICE_NAME_POSTFIX;
+  return {emailId, publicId, serviceName};
+}
+
+const _genServiceInfo = (emailId) => {
+  let serviceInfo = _splitPublicIdAndService(emailId);
+  return _genXorName(serviceInfo.publicId)
+    .then((hashed) => {
+      serviceInfo.serviceAddr = hashed;
+      return serviceInfo;
+    });
+}
+
+const _storeEmail = (email, to) => {
+  let serviceInfo;
+  return _genServiceInfo(to)
+    .then((info) => serviceInfo = info)
+    .then(() => window.safeMutableData.newPublic(APP_HANDLE, serviceInfo.serviceAddr, TAG_TYPE_DNS))
+    .then((servicesHandle) => window.safeMutableData.get(servicesHandle, serviceInfo.serviceName)
+      .catch((err) => {throw Error("Email id not found")})
+      .then((service) => window.safeMutableData.fromSerial(servicesHandle, service.buf))
+      .then((inboxHandle) => window.safeMutableData.get(inboxHandle, MD_KEY_EMAIL_ENC_PUBLIC_KEY)
+        .then((pk) => _writeEmailContent(email, pk.buf.toString())
+          .then((emailAddr) => window.safeMutableData.newMutation(APP_HANDLE)
+            .then((mutHandle) => {
+              let entryKey = _genRandomEntryKey();
+              return _encrypt(emailAddr, pk.buf.toString())
+                .then((entryValue) => window.safeMutableDataMutation.insert(mutHandle, entryKey, entryValue)
+                  .then(() => window.safeMutableData.applyEntriesMutation(inboxHandle, mutHandle))
+                )
+            })
+          )))
+    );
+}
+
+export const sendEmail = (rating, comments, emailId) => {
+  let emailContent = {
     subject: "SAFE Wallet feedback",
     from: "SAFE Faucet",
     time: (new Date()).toUTCString(),
-    body: "{ rating: '" + rating + "', feedback: '" + comments + "' }",
+    body: "[" + rating + " star/s] " + comments
   }
 
-  let emailContent = new Uint8Array(new Buffer(JSON.stringify(data)));
-  return _appendToTxInbox(emailId, emailContent)
+  return _storeEmail(emailContent, emailId)
     .then(() => console.log("Email sent"))
 }

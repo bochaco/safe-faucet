@@ -10,7 +10,7 @@ export const appInfo = {
   vendor: 'bochaco'
 };
 
-const NUMBER_OF_COINS_TO_MINT = 2;
+const NUMBER_OF_COINS_TO_MINT = 6;
 const EMAIL_ID = "safewalletfeedback";
 const SAFE_WALLET_URL = 'safe://safewallet.wow';
 
@@ -27,6 +27,10 @@ class App extends React.Component {
     this.mintCoins = this.mintCoins.bind(this);
     this.handleRating = this.handleRating.bind(this);
     this.handleSubmit = this.handleSubmit.bind(this);
+  }
+
+  componentWillMount() {
+    authoriseApp(appInfo);
   }
 
   handleRating (e, { rating, maxRating }) {
@@ -57,11 +61,8 @@ class App extends React.Component {
       return;
     }
     this.setState({claimed: true});
-    return authoriseApp(appInfo)
-      .then(() => {
-        console.log(`Minting coins for '${pk}'`);
-        return this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT);
-      })
+    console.log(`Minting coins for '${pk}'`);
+    return this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT)
       .then((coinIds) => {
         console.log("Notifying coins transfer to recipient's wallet inbox: ", coinIds);
         return sendTxNotif(pk, coinIds);

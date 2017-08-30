@@ -1,6 +1,6 @@
 {
   "name": "safe-faucet",
-  "homepage": "file:///home/bochaco/work/safe-faucet/build/",
+  "homepage": "/build",
   "version": "0.0.10",
   "private": true,
   "devDependencies": {

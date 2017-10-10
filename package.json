@@ -1,10 +1,10 @@
 {
   "name": "safe-faucet",
-  "homepage": "/build",
   "version": "0.0.10",
   "private": true,
   "devDependencies": {
-    "react-scripts": "0.8.4"
+    "react-scripts": "0.8.4",
+    "semantic-ui": "^2.2.13"
   },
   "dependencies": {
     "crypto": "0.0.3",

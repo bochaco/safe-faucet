@@ -1,8 +1,10 @@
 import React from 'react';
-import { Dimmer, Loader, Grid, Header, Rating, Button, Message, Form, Icon, Segment } from 'semantic-ui-react';
-import '../node_modules/semantic-ui-css/semantic.min.css';
+import { Image, Dimmer, Loader, Grid, Header, Rating, Button,
+        Message, Form, Icon, Segment } from 'semantic-ui-react';
 
 var {authoriseApp, sendTxNotif, mintCoin, sendEmail} = require('./storage.js');
+
+import anita from './anita.png';
 
 export const appInfo = {
   name: 'SAFE Faucet',
@@ -64,7 +66,7 @@ class App extends React.Component {
     console.log(`Minting coins for '${pk}'`);
     return this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT)
       .then((coinIds) => {
-        console.log("Notifying coins transfer to recipient's wallet inbox: ", coinIds);
+        console.log("Notifying coins transfer to recipient's wallet inbox...");
         return sendTxNotif(pk, coinIds);
       })
       .then(() => {
@@ -84,9 +86,18 @@ class App extends React.Component {
           <Grid.Column width={4} />
           <Grid.Column width={8}>
             <Segment attached='top' secondary>
-              <Header>Welcome to the SAFE Faucet!</Header>
-              Get free <b>ThanksCoins</b> by providing feedback about the <a href={SAFE_WALLET_URL}>SAFE Wallet</a> app.
-              Note this is anonymous, so please provide any type of feedback that it'll be very much appreciated.
+              <Grid>
+                <Grid.Row>
+                  <Grid.Column width={2}>
+                    <Image src={anita} />
+                  </Grid.Column>
+                  <Grid.Column width={14} textAlign='left'>
+                    <Header>Welcome to the SAFE Faucet!</Header>
+                    Get free <b>ThanksCoins</b> by providing feedback about the <a href={SAFE_WALLET_URL}>SAFE Wallet</a> app.
+                    Note this is anonymous, so please provide any type of feedback that it'll be very much appreciated.
+                  </Grid.Column>
+                </Grid.Row>
+              </Grid>
             </Segment>
             <Form onSubmit={this.handleSubmit} name='mintACoin' className='attached fluid segment'>
               <Grid>

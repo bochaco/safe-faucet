@@ -13,10 +13,11 @@ const TAG_TYPE_WALLET_TX_INBOX = 20082018;
 
 const COIN_ENTRY_KEY_DATA = 'coin-data';
 const MD_KEY_EMAIL_ENC_PUBLIC_KEY = "__email_enc_pk";
+const MD_KEY_TX_ENC_PUBLIC_KEY = "__tx_enc_pk";
 
 const _genXorName = (str) => window.safeCrypto.sha3Hash(APP_HANDLE, str);
-
 const _genRandomEntryKey = () => crypto.randomBytes(32).toString('hex');
+const _genTxId = () => crypto.randomBytes(16).toString('hex');
 
 export const authoriseApp = (appInfo) => {
   console.log("Authenticating app...");
@@ -52,26 +53,6 @@ export const mintCoin = (pk) => {
     .then(() => coinXorName);
 }
 
-export const sendTxNotif = (pk, coinIds) => {
-  let txId = _genRandomEntryKey();
-  let tx = {
-    coinIds: coinIds,
-    msg: 'In exchange for your feedback about the SAFE Wallet!',
-    date: (new Date()).toUTCString()
-  }
-
-  console.log("Saving TX inbox data in the network...");
-  return window.safeMutableData.newMutation(APP_HANDLE)
-    .then((mutHandle) => window.safeMutableDataMutation.insert(mutHandle, txId, JSON.stringify(tx)) // TODO: encrypt notif
-      .then(() => _genXorName(pk))
-      .then((xorName) => window.safeMutableData.newPublic(APP_HANDLE, xorName, TAG_TYPE_WALLET_TX_INBOX))
-      .then((txInboxHandle) => window.safeMutableData.applyEntriesMutation(txInboxHandle, mutHandle)
-        .then(() => window.safeMutableData.free(txInboxHandle))
-      )
-      .then(() => window.safeMutableDataMutation.free(mutHandle))
-    );
-}
-
 const _encrypt = (input, pk) => {
   if(Array.isArray(input)) {
     input = input.toString();
@@ -80,6 +61,30 @@ const _encrypt = (input, pk) => {
   return window.safeCrypto.pubEncKeyKeyFromRaw(APP_HANDLE, Buffer.from(pk, 'hex'))
     .then((pubEncKeyHandle) => window.safeCryptoPubEncKey.encryptSealed(pubEncKeyHandle, input))
 };
+
+export const sendTxNotif = (pk, coinIds) => {
+  let txId = _genTxId();
+  let tx = {
+    coinIds: coinIds,
+    msg: 'In exchange for your feedback about the SAFE Wallet!',
+    date: (new Date()).toUTCString()
+  }
+
+  console.log("Sending TX notification to recipient. TX id: ", txId);
+  return _genXorName(pk)
+    .then((xorName) => window.safeMutableData.newPublic(APP_HANDLE, xorName, TAG_TYPE_WALLET_TX_INBOX))
+    .then((txInboxHandle) => window.safeMutableData.get(txInboxHandle, MD_KEY_TX_ENC_PUBLIC_KEY)
+      .then((encPk) => _encrypt(JSON.stringify(tx), encPk.buf.toString()))
+      .then((encryptedTx) => window.safeMutableData.newMutation(APP_HANDLE)
+        .then((mutHandle) => window.safeMutableDataMutation.insert(mutHandle, txId, encryptedTx)
+          .then(() => window.safeMutableData.applyEntriesMutation(txInboxHandle, mutHandle)
+            .then(() => window.safeMutableData.free(txInboxHandle))
+          )
+          .then(() => window.safeMutableDataMutation.free(mutHandle))
+        )
+      )
+    );
+}
 
 const _writeEmailContent = (email, pk) => {
   return _encrypt(JSON.stringify(email), pk)

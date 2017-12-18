@@ -37,15 +37,10 @@ export const mintCoin = (pk) => {
   const coin = { owner: pk, prev_owner: OWNER_OF_MINTED_COINS };
   const coinData = { [COIN_ENTRY_KEY_DATA]: JSON.stringify(coin) };
 
-  let permSetHandle;
   let coinXorName;
   return window.safeMutableData.newRandomPublic(APP_HANDLE, TAG_TYPE_THANKS_COIN)
     .then((coinHandle) => window.safeMutableData.quickSetup(coinHandle, coinData)
-      .then(() => window.safeMutableData.newPermissionSet(APP_HANDLE))
-      .then((pmSetHandle) => permSetHandle = pmSetHandle)
-      .then(() => window.safeMutableDataPermissionsSet.setAllow(permSetHandle, 'Update'))
-      .then(() => window.safeMutableData.setUserPermissions(coinHandle, null, permSetHandle, 1))
-      .then(() => window.safeMutableDataPermissionsSet.free(permSetHandle))
+      .then(() => window.safeMutableData.setUserPermissions(coinHandle, null, ['Update'], 1))
       .then(() => window.safeMutableData.getNameAndTag(coinHandle))
       .then((res) => coinXorName = res.name.buffer.toString('hex'))
       .then(() => window.safeMutableData.free(coinHandle))
@@ -58,7 +53,7 @@ const _encrypt = (input, pk) => {
     input = input.toString();
   }
 
-  return window.safeCrypto.pubEncKeyKeyFromRaw(APP_HANDLE, Buffer.from(pk, 'hex'))
+  return window.safeCrypto.pubEncKeyFromRaw(APP_HANDLE, Buffer.from(pk, 'hex'))
     .then((pubEncKeyHandle) => window.safeCryptoPubEncKey.encryptSealed(pubEncKeyHandle, input))
 };
 

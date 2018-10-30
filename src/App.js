@@ -1,10 +1,10 @@
 import React from 'react';
 import { Image, Dimmer, Loader, Grid, Header, Rating, Button,
         Message, Form, Icon, Segment } from 'semantic-ui-react';
-
-var {authoriseApp, sendTxNotif, mintCoin, sendEmail} = require('./storage.js');
-
 import anita from './anita.png';
+
+var { authoriseApp, sendTxNotif, mintCoin, sendFeedback } = require('./storage.js');
+
 
 export const appInfo = {
   name: 'SAFE Faucet',
@@ -13,7 +13,8 @@ export const appInfo = {
 };
 
 const NUMBER_OF_COINS_TO_MINT = 6;
-const EMAIL_ID = "safewalletfeedback";
+const FEEDBACK_FROM_WEBID = 'safe://webid.faucet#me';
+const FEEDBACK_TARGET_WEBID = 'safe://webid.anita#me';
 const SAFE_WALLET_URL = 'safe://safewallet.wow';
 
 class App extends React.Component {
@@ -39,24 +40,18 @@ class App extends React.Component {
     this.setState({rating: rating})
   }
 
-  mintCoins(pk, amount) {
+  async mintCoins(pk, amount) {
     if (amount < 1) {
       return Promise.resolve([]);
     }
-    let id;
-    return mintCoin(pk)
-      .then((_id) => {
-        id = _id;
-        console.log("Coin minted at: ", id);
-        return this.mintCoins(pk, amount-1);
-      })
-      .then((ids) => {
-        ids.push(id);
-        return ids;
-      });
+    const id = await mintCoin(pk);
+    console.log("Coin minted at: ", id);
+    const ids = await this.mintCoins(pk, amount - 1);
+    ids.push(id);
+    return ids;
   }
 
-  handleSubmit(e, { formData }) {
+  async handleSubmit(e, { formData }) {
     e.preventDefault();
     let pk = formData.pk;
     if (pk.length < 1) {
@@ -64,19 +59,13 @@ class App extends React.Component {
     }
     this.setState({claimed: true});
     console.log(`Minting coins for '${pk}'`);
-    return this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT)
-      .then((coinIds) => {
-        console.log("Notifying coins transfer to recipient's wallet inbox...");
-        return sendTxNotif(pk, coinIds);
-      })
-      .then(() => {
-        console.log("Coins transfer was notified");
-        return sendEmail(this.state.rating, formData.comments, EMAIL_ID);
-      })
-      .then(() => {
-        console.log(`Feedback has been sent to: '${EMAIL_ID}'`);
-        this.setState({transferred: true});
-      });
+    const coinIds = await this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT);
+    console.log("Notifying coins transfer to recipient's wallet inbox...");
+    await sendTxNotif(pk, coinIds);
+    console.log("Coins transfer was notified");
+    await sendFeedback(this.state.rating, formData.comments, FEEDBACK_FROM_WEBID, FEEDBACK_TARGET_WEBID);
+    console.log(`Feedback has been sent to: '${FEEDBACK_TARGET_WEBID}'`);
+    this.setState({ transferred: true });
   }
 
   render() {

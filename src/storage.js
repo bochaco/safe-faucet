@@ -1,63 +1,56 @@
 /*
-  Helper functions to store data in the SAFEnet
+  Helper functions to store data on the SAFE Network
 */
 import crypto from 'crypto';
 
-let APP_HANDLE = null;
-const OWNER_OF_MINTED_COINS = 'GENESIS';
-const SERVICE_NAME_POSTFIX = "@email";
+let safeApp = null;
 
-const TAG_TYPE_DNS = 15001;
+const OWNER_OF_MINTED_COINS = 'GENESIS';
+
 const TAG_TYPE_THANKS_COIN = 21082018;
 const TAG_TYPE_WALLET_TX_INBOX = 20082018;
 
 const COIN_ENTRY_KEY_DATA = 'coin-data';
-const MD_KEY_EMAIL_ENC_PUBLIC_KEY = "__email_enc_pk";
 const MD_KEY_TX_ENC_PUBLIC_KEY = "__tx_enc_pk";
 
-const _genXorName = (str) => window.safeCrypto.sha3Hash(APP_HANDLE, str);
-const _genRandomEntryKey = () => crypto.randomBytes(32).toString('hex');
+const _genXorName = (str) => safeApp.crypto.sha3Hash(str);
 const _genTxId = () => crypto.randomBytes(16).toString('hex');
 
-export const authoriseApp = (appInfo) => {
-  console.log("Authenticating app...");
-
-  return window.safeApp.initialise(appInfo)
-    .then((appHandle) => {
-      APP_HANDLE = appHandle;
-      console.log("App handle retrieved: ", appHandle);
-      return window.safeApp.authorise(APP_HANDLE, {});
-    })
-    .then((authUri) => window.safeApp.connectAuthorised(APP_HANDLE, authUri))
-    .then(() => console.log('The app was authorised'))
-    .catch((err) => console.error('Error when trying to authorise the app: ', err));
+export const authoriseApp = async (appInfo) => {
+  console.log("Authorising app...");
+  safeApp = await window.safe.initialiseApp(appInfo);
+  console.log("safeApp instance initialised...");
+  const authReqUri = await safeApp.auth.genAuthUri();
+  console.log("Authorisation request URI generated: ", authReqUri);
+  const authUri = await window.safe.authorise(authReqUri);
+  console.log("Connecting to the network...");
+  await safeApp.auth.loginFromUri(authUri);
+  console.log("App connected");
 }
 
-export const mintCoin = (pk) => {
+export const mintCoin = async (pk) => {
   const coin = { owner: pk, prev_owner: OWNER_OF_MINTED_COINS };
   const coinData = { [COIN_ENTRY_KEY_DATA]: JSON.stringify(coin) };
 
-  let coinXorName;
-  return window.safeMutableData.newRandomPublic(APP_HANDLE, TAG_TYPE_THANKS_COIN)
-    .then((coinHandle) => window.safeMutableData.quickSetup(coinHandle, coinData)
-      .then(() => window.safeMutableData.setUserPermissions(coinHandle, null, ['Update'], 1))
-      .then(() => window.safeMutableData.getNameAndTag(coinHandle))
-      .then((res) => coinXorName = res.name.buffer.toString('hex'))
-      .then(() => window.safeMutableData.free(coinHandle))
-    )
-    .then(() => coinXorName);
+  const coinMd = await safeApp.mutableData.newRandomPublic(TAG_TYPE_THANKS_COIN);
+  await coinMd.quickSetup(coinData);
+  await coinMd.setUserPermissions(window.safe.CONSTANTS.USER_ANYONE, ['Update'], 1);
+  const nameAndTag = await coinMd.getNameAndTag();
+  const coinXorName = nameAndTag.name.buffer.toString('hex');
+  return coinXorName;
 }
 
-const _encrypt = (input, pk) => {
+const _encrypt = async (input, pk) => {
   if(Array.isArray(input)) {
     input = input.toString();
   }
 
-  return window.safeCrypto.pubEncKeyFromRaw(APP_HANDLE, Buffer.from(pk, 'hex'))
-    .then((pubEncKeyHandle) => window.safeCryptoPubEncKey.encryptSealed(pubEncKeyHandle, input))
+  const pubEncKey = await safeApp.crypto.pubEncKeyFromRaw(Buffer.from(pk, 'hex'));
+  const encrypted = await pubEncKey.encryptSealed(input);
+  return encrypted;
 };
 
-export const sendTxNotif = (pk, coinIds) => {
+export const sendTxNotif = async (pk, coinIds) => {
   let txId = _genTxId();
   let tx = {
     coinIds: coinIds,
@@ -66,81 +59,78 @@ export const sendTxNotif = (pk, coinIds) => {
   }
 
   console.log("Sending TX notification to recipient. TX id: ", txId);
-  return _genXorName(pk)
-    .then((xorName) => window.safeMutableData.newPublic(APP_HANDLE, xorName, TAG_TYPE_WALLET_TX_INBOX))
-    .then((txInboxHandle) => window.safeMutableData.get(txInboxHandle, MD_KEY_TX_ENC_PUBLIC_KEY)
-      .then((encPk) => _encrypt(JSON.stringify(tx), encPk.buf.toString()))
-      .then((encryptedTx) => window.safeMutableData.newMutation(APP_HANDLE)
-        .then((mutHandle) => window.safeMutableDataMutation.insert(mutHandle, txId, encryptedTx)
-          .then(() => window.safeMutableData.applyEntriesMutation(txInboxHandle, mutHandle)
-            .then(() => window.safeMutableData.free(txInboxHandle))
-          )
-          .then(() => window.safeMutableDataMutation.free(mutHandle))
-        )
-      )
-    );
+  const xorName = await _genXorName(pk);
+  const txInboxMd = await safeApp.mutableData.newPublic(xorName, TAG_TYPE_WALLET_TX_INBOX);
+  const encPk = await txInboxMd.get(MD_KEY_TX_ENC_PUBLIC_KEY);
+  const encryptedTx = await _encrypt(JSON.stringify(tx), encPk.buf.toString());
+  const mutations = await safeApp.mutableData.newMutation();
+  await mutations.insert(txId, encryptedTx);
+  await txInboxMd.applyEntriesMutation(mutations);
 }
 
-const _writeEmailContent = (email, pk) => {
-  return _encrypt(JSON.stringify(email), pk)
-    .then(encryptedEmail => window.safeImmutableData.create(APP_HANDLE)
-       .then((emailHandle) => window.safeImmutableData.write(emailHandle, encryptedEmail)
-         .then(() => window.safeCipherOpt.newPlainText(APP_HANDLE))
-         .then((cipherOptHandle) => window.safeImmutableData.closeWriter(emailHandle, cipherOptHandle))
-       )
-    )
-}
+const _postFeedback = async ( fromWebId, targetWebId, newPost ) =>
+{
+    console.log( 'Adding post to:', targetWebId );
+    const postsMd =
+        await safeApp.mutableData.newPublic( targetWebId.posts.xorName, targetWebId.posts.typeTag );
+    const postsRdf = postsMd.emulateAs( 'rdf' );
 
-const _splitPublicIdAndService = (emailId) => {
-  // It supports complex email IDs, e.g. 'emailA.myshop', 'emailB.myshop'
-  let str = emailId.replace(/\.+$/, '');
-  let toParts = str.split('.');
-  const publicId = toParts.pop();
-  const serviceId =  str.slice(0, -1 * (publicId.length+1));
-  emailId = (serviceId.length > 0 ? (serviceId + '.') : '') + publicId;
-  const serviceName = serviceId + SERVICE_NAME_POSTFIX;
-  return {emailId, publicId, serviceName};
-}
+    const graphId = `${targetWebId['@id']}/posts`;
+    const id = postsRdf.sym( `${graphId}/${Math.round( Math.random() * 100000 )}` );
+    postsRdf.setId( graphId );
 
-const _genServiceInfo = (emailId) => {
-  let serviceInfo = _splitPublicIdAndService(emailId);
-  return _genXorName(serviceInfo.publicId)
-    .then((hashed) => {
-      serviceInfo.serviceAddr = hashed;
-      return serviceInfo;
-    });
-}
+    const ACTSTREAMS = postsRdf.namespace( 'https://www.w3.org/ns/activitystreams/' );
 
-const _storeEmail = (email, to) => {
-  let serviceInfo;
-  return _genServiceInfo(to)
-    .then((info) => serviceInfo = info)
-    .then(() => window.safeMutableData.newPublic(APP_HANDLE, serviceInfo.serviceAddr, TAG_TYPE_DNS))
-    .then((servicesHandle) => window.safeMutableData.get(servicesHandle, serviceInfo.serviceName)
-      .catch((err) => {throw Error("Email id not found")})
-      .then((service) => window.safeMutableData.fromSerial(servicesHandle, service.buf))
-      .then((inboxHandle) => window.safeMutableData.get(inboxHandle, MD_KEY_EMAIL_ENC_PUBLIC_KEY)
-        .then((pk) => _writeEmailContent(email, pk.buf.toString())
-          .then((emailAddr) => window.safeMutableData.newMutation(APP_HANDLE)
-            .then((mutHandle) => {
-              let entryKey = _genRandomEntryKey();
-              return _encrypt(emailAddr, pk.buf.toString())
-                .then((entryValue) => window.safeMutableDataMutation.insert(mutHandle, entryKey, entryValue)
-                  .then(() => window.safeMutableData.applyEntriesMutation(inboxHandle, mutHandle))
-                )
-            })
-          )))
-    );
-}
+    postsRdf.add( id, ACTSTREAMS( 'type' ), postsRdf.literal( 'Note' ) );
+    postsRdf.add( id, ACTSTREAMS( 'attributedTo' ), postsRdf.literal( fromWebId ) );
+    postsRdf.add( id, ACTSTREAMS( 'summary' ), postsRdf.literal( newPost.summary ) );
+    postsRdf.add( id, ACTSTREAMS( 'published' ), postsRdf.literal( newPost.published ) );
+    postsRdf.add( id, ACTSTREAMS( 'content' ), postsRdf.literal( newPost.content ) );
 
-export const sendEmail = (rating, comments, emailId) => {
-  let emailContent = {
-    subject: "SAFE Wallet feedback",
-    from: "SAFE Faucet",
-    time: (new Date()).toUTCString(),
-    body: "[" + rating + " star/s] " + comments
+    const serial = await postsRdf.serialise();
+    await postsRdf.append();
+    console.log( 'New message posted:', serial );
+};
+
+const _fetchWebId = async ( webIdUri ) =>
+{
+    console.log( 'Fetch WebID:', webIdUri );
+    const { serviceMd: webIdMd, type } = await safeApp.fetch( webIdUri );
+    if ( type !== 'RDF' ) throw new Error('Service is not mapped to a WebID RDF');
+
+    const webIdRdf = webIdMd.emulateAs( 'rdf' );
+    await webIdRdf.nowOrWhenFetched();
+
+    const serial = await webIdRdf.serialise( 'application/ld+json' );
+    console.log( 'Target WebID doc:', serial );
+
+    const baseUri = webIdUri.split( '#' )[0];
+    const postsGraph = `${baseUri}/posts`;
+
+    const SAFETERMS = webIdRdf.namespace( 'http://safenetwork.org/safevocab/' );
+    const xornameMatch = webIdRdf.statementsMatching( webIdRdf.sym( postsGraph ), SAFETERMS( 'xorName' ), undefined );
+    const xorName = xornameMatch[0].object.value.split( ',' );
+    const typetagMatch = webIdRdf.statementsMatching( webIdRdf.sym( postsGraph ), SAFETERMS( 'typeTag' ), undefined );
+    const typeTag = parseInt( typetagMatch[0].object.value );
+
+    const webId = {
+        '@id' : baseUri,
+        posts : {
+            xorName,
+            typeTag
+        }
+    };
+    return webId;
+};
+
+export const sendFeedback = async (rating, comments, fromWebId, targetWebId) => {
+  let postContent = {
+    summary: 'SAFE Wallet feedback',
+    published: (new Date()).toISOString(),
+    content: `[${rating} star${rating > 1 ? 's' : ''}] ${comments}`
   }
 
-  return _storeEmail(emailContent, emailId)
-    .then(() => console.log("Email sent"))
+  const webId = await _fetchWebId(targetWebId);
+  await _postFeedback(fromWebId, webId, postContent);
+  console.log('Feedback sent');
 }

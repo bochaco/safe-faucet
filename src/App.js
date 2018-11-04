@@ -3,7 +3,8 @@ import { Image, Dimmer, Loader, Grid, Header, Rating, Button,
         Message, Form, Icon, Segment } from 'semantic-ui-react';
 import anita from './anita.png';
 
-var { authoriseApp, sendTxNotif, mintCoin, sendFeedback } = require('./storage.js');
+var { authoriseApp, fetchRecipientInfo,
+      sendTxNotif, mintCoin, sendFeedback } = require('./storage.js');
 
 
 export const appInfo = {
@@ -13,9 +14,10 @@ export const appInfo = {
 };
 
 const NUMBER_OF_COINS_TO_MINT = 6;
-const FEEDBACK_FROM_WEBID = 'safe://webid.faucet#me';
-const FEEDBACK_TARGET_WEBID = 'safe://webid.anita#me';
+const FEEDBACK_FROM_WEBID = 'safe://faucet.thankscoin#me';
+const FEEDBACK_TARGET_WEBID = 'safe://feedback.thankscoin#me';
 const SAFE_WALLET_URL = 'safe://safewallet.wow';
+const PATTER_URL = 'safe://pat.ter/#/profile/feedback.thankscoin';
 
 class App extends React.Component {
   constructor(props) {
@@ -53,19 +55,24 @@ class App extends React.Component {
 
   async handleSubmit(e, { formData }) {
     e.preventDefault();
-    let pk = formData.pk;
-    if (pk.length < 1) {
-      return;
+    try {
+      const recipient = await fetchRecipientInfo(formData.recipient);
+      const pk = recipient.pk;
+      if (pk.length < 1) {
+        return;
+      }
+      this.setState({claimed: true});
+      console.log(`Minting coins for '${pk}'`);
+      const coinIds = await this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT);
+      console.log("Notifying coins transfer to recipient's wallet inbox...");
+      await sendTxNotif(recipient, coinIds);
+      console.log("Coins transfer was notified");
+      await sendFeedback(this.state.rating, formData.comments, FEEDBACK_FROM_WEBID, FEEDBACK_TARGET_WEBID);
+      console.log(`Feedback has been sent to: '${FEEDBACK_TARGET_WEBID}'`);
+      this.setState({ transferred: true });
+    } catch(error) {
+      console.error(error);
     }
-    this.setState({claimed: true});
-    console.log(`Minting coins for '${pk}'`);
-    const coinIds = await this.mintCoins(pk, NUMBER_OF_COINS_TO_MINT);
-    console.log("Notifying coins transfer to recipient's wallet inbox...");
-    await sendTxNotif(pk, coinIds);
-    console.log("Coins transfer was notified");
-    await sendFeedback(this.state.rating, formData.comments, FEEDBACK_FROM_WEBID, FEEDBACK_TARGET_WEBID);
-    console.log(`Feedback has been sent to: '${FEEDBACK_TARGET_WEBID}'`);
-    this.setState({ transferred: true });
   }
 
   render() {
@@ -82,8 +89,9 @@ class App extends React.Component {
                   </Grid.Column>
                   <Grid.Column width={14} textAlign='left'>
                     <Header>Welcome to the SAFE Faucet!</Header>
-                    Get free <b>ThanksCoins</b> by providing feedback about the <a href={SAFE_WALLET_URL}>SAFE Wallet</a> app.
+                    Get free <b>ThanksCoins</b> by providing feedback about the <a target='_blank' rel='noopener noreferrer' href={SAFE_WALLET_URL}>SAFE Wallet</a> app.
                     Note this is anonymous, so please provide any type of feedback that it'll be very much appreciated.
+                    Feedback is sent as posts to <b><i>{FEEDBACK_TARGET_WEBID}</i></b> WebID, you can see them using <a target='_blank' rel='noopener noreferrer' href={PATTER_URL}>Patter social app</a>.
                   </Grid.Column>
                 </Grid.Row>
               </Grid>
@@ -106,7 +114,7 @@ class App extends React.Component {
               </Grid>
               <br/>
               <Form.Input disabled={this.state.claimed} name='comments' label='Comments / Feedback' placeholder='E.g. I hate the SAFE Wallet app' type='text' />
-              <Form.Input disabled={this.state.claimed} name='pk' label='Wallet' placeholder='Public key' type='text' />
+              <Form.Input disabled={this.state.claimed} name='recipient' label='Wallet / Recipient' placeholder='Public key / WebID' type='text' />
               <Button disabled={this.state.claimed} primary>Get free ThanksCoins!</Button>
               { (this.state.claimed && !this.state.transferred) &&
                 <Dimmer active inverted>

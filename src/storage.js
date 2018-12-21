@@ -98,18 +98,37 @@ const _fetchWebId = async ( webIdUri ) =>
   await webIdRdf.nowOrWhenFetched();
 
   const baseUri = webIdUri.split( '#' )[0];
-  const postsGraph = webIdRdf.sym(`${baseUri}/posts`);
-  const walletGraph = webIdRdf.sym(`${baseUri}/walletInbox`);
-
   const SAFETERMS = webIdRdf.namespace( 'http://safenetwork.org/safevocab/' );
   const xorNamePredicate = SAFETERMS( 'xorName' );
   const typeTagPredicate = SAFETERMS( 'typeTag' );
 
-  const postsXorNameMatch = webIdRdf.statementsMatching( postsGraph, xorNamePredicate, undefined );
-  const postsXorName = postsXorNameMatch[0].object.value.split( ',' );
-  const postsTypeTagMatch = webIdRdf.statementsMatching( postsGraph, typeTagPredicate, undefined );
-  const postsTypeTag = parseInt( postsTypeTagMatch[0].object.value );
+  const webIdGraph = `${baseUri}#me`;
+  const ACTIVITYSTREAMS_VOCAB_URL = 'https://www.w3.org/ns/activitystreams/';
+  const ACTSTREAMS = webIdRdf.namespace( ACTIVITYSTREAMS_VOCAB_URL );
+  const inboxMatch = webIdRdf.statementsMatching( webIdRdf.sym( webIdGraph ), ACTSTREAMS( 'inbox' ), undefined );
+  const inbox = inboxMatch[0] && inboxMatch[0].object.value;
+  // if there is no inbox link, let's fallback to try old format
+  let posts;
+  if (inbox) {
+    const { content } = await safeApp.fetch(inbox);
+    const nameAndTag = await content.getNameAndTag();
+    posts = {
+      xorName: nameAndTag.name,
+      typeTag: nameAndTag.typeTag
+    };
+  } else {
+    const postsGraph = webIdRdf.sym(`${baseUri}/posts`);
+    const postsXorNameMatch = webIdRdf.statementsMatching( postsGraph, xorNamePredicate, undefined );
+    const postsXorName = postsXorNameMatch[0].object.value.split( ',' );
+    const postsTypeTagMatch = webIdRdf.statementsMatching( postsGraph, typeTagPredicate, undefined );
+    const postsTypeTag = parseInt( postsTypeTagMatch[0].object.value );
+    posts = {
+      xorName: postsXorName,
+      typeTag: postsTypeTag
+    };
+  }
 
+  const walletGraph = webIdRdf.sym(`${baseUri}/walletInbox`);
   const walletXorNameMatch = webIdRdf.statementsMatching( walletGraph, xorNamePredicate, undefined );
   let walletXorName;
   if (walletXorNameMatch[0]) {
@@ -123,15 +142,13 @@ const _fetchWebId = async ( webIdUri ) =>
 
   const webId = {
     '@id' : baseUri,
-    posts : {
-      xorName: postsXorName,
-      typeTag: postsTypeTag
-    },
+    posts,
     walletInbox : {
       xorName: walletXorName,
       typeTag: walletTypeTag
     }
   };
+  console.log("WebID Info:", webId);
   return webId;
 };
 

@@ -91,8 +91,8 @@ const _postFeedback = async ( fromWebId, targetWebId, newPost ) =>
 const _fetchWebId = async ( webIdUri ) =>
 {
   console.log( 'Fetch WebID:', webIdUri );
-  const { serviceMd: webIdMd, type } = await safeApp.fetch( webIdUri );
-  if ( type !== 'RDF' ) throw new Error('Service is not mapped to a WebID RDF');
+  const { content: webIdMd, resourceType } = await safeApp.fetch( webIdUri );
+  if ( resourceType !== 'RDF' ) throw new Error('Service is not mapped to a WebID RDF');
 
   const webIdRdf = webIdMd.emulateAs( 'rdf' );
   await webIdRdf.nowOrWhenFetched();

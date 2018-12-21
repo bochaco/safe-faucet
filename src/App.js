@@ -17,7 +17,7 @@ const NUMBER_OF_COINS_TO_MINT = 6;
 const FEEDBACK_FROM_WEBID = 'safe://faucet.thankscoin#me';
 const FEEDBACK_TARGET_WEBID = 'safe://feedback.thankscoin#me';
 const SAFE_WALLET_URL = 'safe://safewallet.wow';
-const PATTER_URL = 'safe://pat.ter/#/profile/feedback.thankscoin';
+const PATTER_URL = 'safe://patter.dapp/#/profile/feedback.thankscoin';
 
 class App extends React.Component {
   constructor(props) {

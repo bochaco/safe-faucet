@@ -1,6 +1,6 @@
 {
   "name": "safe-faucet",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "private": true,
   "devDependencies": {
     "react-scripts": "^2.0.5",

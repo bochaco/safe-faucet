@@ -98,17 +98,17 @@ const _fetchWebId = async ( webIdUri ) =>
   await webIdRdf.nowOrWhenFetched();
 
   const baseUri = webIdUri.split( '#' )[0];
+  const webIdGraph = `${baseUri}#me`;
   const SAFETERMS = webIdRdf.namespace( 'http://safenetwork.org/safevocab/' );
   const xorNamePredicate = SAFETERMS( 'xorName' );
   const typeTagPredicate = SAFETERMS( 'typeTag' );
 
-  const webIdGraph = `${baseUri}#me`;
+  let posts;
   const ACTIVITYSTREAMS_VOCAB_URL = 'https://www.w3.org/ns/activitystreams/';
   const ACTSTREAMS = webIdRdf.namespace( ACTIVITYSTREAMS_VOCAB_URL );
   const inboxMatch = webIdRdf.statementsMatching( webIdRdf.sym( webIdGraph ), ACTSTREAMS( 'inbox' ), undefined );
   const inbox = inboxMatch[0] && inboxMatch[0].object.value;
   // if there is no inbox link, let's fallback to try old format
-  let posts;
   if (inbox) {
     const { content } = await safeApp.fetch(inbox);
     const nameAndTag = await content.getNameAndTag();
@@ -128,25 +128,34 @@ const _fetchWebId = async ( webIdUri ) =>
     };
   }
 
-  const walletGraph = webIdRdf.sym(`${baseUri}/walletInbox`);
-  const walletXorNameMatch = webIdRdf.statementsMatching( walletGraph, xorNamePredicate, undefined );
-  let walletXorName;
-  if (walletXorNameMatch[0]) {
-    walletXorName = walletXorNameMatch[0].object.value.split( ',' );
-  }
-  const walletTypeTagMatch = webIdRdf.statementsMatching( walletGraph, typeTagPredicate, undefined );
-  let walletTypeTag;
-  if (walletTypeTagMatch[0]) {
-    walletTypeTag = parseInt( walletTypeTagMatch[0].object.value );
+  let walletInbox;
+  const WALLETTERMS = webIdRdf.namespace( 'https://w3id.org/cc#' );
+  const walletTxInboxMatch = webIdRdf.statementsMatching(webIdRdf.sym( webIdGraph ), WALLETTERMS('inbox'), undefined);
+  const walletTxInbox = walletTxInboxMatch[0] && walletTxInboxMatch[0].object.value;
+  // if there is no wallet TX inbox link, let's fallback to try old format
+  if (walletTxInbox) {
+    const { content } = await safeApp.fetch(walletTxInbox);
+    const nameAndTag = await content.getNameAndTag();
+    walletInbox = {
+      xorName: nameAndTag.name,
+      typeTag: nameAndTag.typeTag
+    };
+  } else {
+    const walletGraph = webIdRdf.sym(`${baseUri}/walletInbox`);
+    const walletXorNameMatch = webIdRdf.statementsMatching( walletGraph, xorNamePredicate, undefined );
+    const walletXorName = walletXorNameMatch[0] && walletXorNameMatch[0].object.value.split( ',' );
+    const walletTypeTagMatch = webIdRdf.statementsMatching( walletGraph, typeTagPredicate, undefined );
+    const walletTypeTag = walletTypeTagMatch[0] && parseInt( walletTypeTagMatch[0].object.value );
+    walletInbox = {
+      xorName: walletXorName,
+      typeTag: walletTypeTag
+    };
   }
 
   const webId = {
     '@id' : baseUri,
     posts,
-    walletInbox : {
-      xorName: walletXorName,
-      typeTag: walletTypeTag
-    }
+    walletInbox
   };
   console.log("WebID Info:", webId);
   return webId;
